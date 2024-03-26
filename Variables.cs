@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace SpectatePOV
+﻿namespace SpectatePOV
 {
     //Ici on stock les variables "globale" pour la lisibilité du code dans Plugin.cs 
     internal class Variables
@@ -23,8 +21,6 @@ namespace SpectatePOV
         public static LobbyManager lobbyManager;
         public static SteamManager steamManager;
 
-        public static Camera camera;
-
         //TextBox
         public static ChatBox chatBoxInstance;
 
@@ -43,6 +39,9 @@ namespace SpectatePOV
         //int
         public static int mapId, modeId, smoothSpeedPosition, smoothSpeedRotation;
 
+        //float
+        public static float updateFrequency;
+
         //ulong
         public static ulong clientId, clientIdSafe;
 
@@ -50,7 +49,7 @@ namespace SpectatePOV
         public static string povKey, gameState, lastGameState;
 
         //bool
-        public static bool povTrigger;
+        public static bool displayMessageInChat, povTrigger;
 
 
 

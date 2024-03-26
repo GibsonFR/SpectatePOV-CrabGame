@@ -7,12 +7,16 @@ global using System;
 global using System.IO;
 global using UnhollowerRuntimeLib;
 global using System.Linq;
-global using UnityEngine.UI;
-using System.Runtime.InteropServices;
+global using System.Runtime.InteropServices;
+global using System.Collections.Generic;
+global using System.Globalization;
+global using System.IO.Compression;
+global using System.Net.Http;
+global using System.Threading.Tasks;
 
 namespace SpectatePOV
 {
-    [BepInPlugin("PlaceHereGUID", "SpectatePOV", "1.0.0")]
+    [BepInPlugin("PlaceHereGUID", "SpectatePOV", "1.2.0")]
     public class Plugin : BasePlugin
     {
         public override void Load()
@@ -29,6 +33,7 @@ namespace SpectatePOV
             Utility.CreateFolder(Variables.mainFolderPath, Variables.logFilePath);
             Utility.CreateFile(Variables.logFilePath, Variables.logFilePath);
             Utility.ResetFile(Variables.logFilePath, Variables.logFilePath);
+
             Utility.SetConfigFile(Variables.configFilePath);
         }
 
@@ -45,7 +50,6 @@ namespace SpectatePOV
 
                 if (elapsedServerUpdate > 1f)
                 {
-                    Variables.camera = FindObjectOfType<Camera>();
                     BasicUpdateServer();
                     Utility.ReadConfigFile(Variables.configFilePath);
                     elapsedServerUpdate = 0f;
@@ -69,11 +73,7 @@ namespace SpectatePOV
             {
                 Variables.clientBody = ClientData.GetClientBody();
                 if (Variables.clientBody == null) return;
-
                 Variables.clientObject = ClientData.GetClientObject();
-                Variables.clientMovement = ClientData.GetClientMovement();
-                Variables.clientInventory = ClientData.GetClientInventory();
-                Variables.clientStatus = PlayerStatus.Instance;
             }
 
             //Ceci mets a jour les données relative au Server
@@ -82,14 +82,6 @@ namespace SpectatePOV
                 Variables.chatBoxInstance = ChatBox.Instance;
                 Variables.gameManager = GameData.GetGameManager();
                 Variables.lobbyManager = GameData.GetLobbyManager();
-                Variables.steamManager = GameData.GetSteamManager();
-                Variables.mapId = GameData.GetMapId();
-                Variables.modeId = GameData.GetModeId();
-                Variables.gameState = GameData.GetGameState();
-                Variables.activePlayers = Variables.gameManager.activePlayers;
-                Variables.playersList = Variables.gameManager.activePlayers.entries.ToList();
-                if (Variables.gameState != Variables.lastGameState)
-                    Variables.lastGameState = Variables.gameState;
             }
         }
 
@@ -97,96 +89,110 @@ namespace SpectatePOV
 
         public class SpecatePOVManager : MonoBehaviour
         {
-            GameObject lastSpectatedPlayer, targetPlayerObject;
-            Vector3 targetPlayerPos = Vector3.zero;
-            Vector3 targetPlayerForward = Vector3.zero;
-            Quaternion targetPlayerRot = Quaternion.identity;
+            GameObject lastSpectatedPlayer, spectatedPlayerObject, moveCamera;
+            Vector3 spectatedPlayerPos = Vector3.zero;
+            Quaternion spectatedPlayerRot = Quaternion.identity;
+            CamBob camBob = null;
 
-            bool messageDisplayed, switchPlayerMessageDisplayed = true;
-
-            CamBob currentCamBob = null;
+            bool displayPOVMessage = true, displaySwitchedPlayerMessage = true, spectatedPlayerNeedUpdate = true;
+            float elapsed = 0f;
 
             void Update()
             {
                 if (!Variables.povTrigger)
                 {
-                    if (messageDisplayed)
+                    if (displayPOVMessage && camBob != null)
                     {
                         Utility.ForceMessage("|<color=orange><b>POV OFF</b></color>|");
-                        switchPlayerMessageDisplayed = true;
-                        messageDisplayed = false;
+                        RestorePlayerModelSize(lastSpectatedPlayer);
+                        displaySwitchedPlayerMessage = true;
+                        displayPOVMessage = false;
+                        camBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Freecam;
                     }
-                    currentCamBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Spectate;
                     return;
                 }
 
-                if (!messageDisplayed)
+                if (Variables.clientBody != null && Variables.povTrigger)
+                {
+                    Variables.povTrigger = false;
+                    Utility.ForceMessage("|<color=orange><b>POV OFF (client is alive this round)</b></color>|");
+                    return;
+                }
+
+                elapsed += Time.deltaTime;
+
+                if (elapsed < (1 - Variables.updateFrequency)) return;
+                else elapsed = 0f;
+
+                if (camBob == null)
+                {
+                    FindAndAssignCamera();
+                    if (camBob == null) return;
+                }
+
+                if (!displayPOVMessage)
                 {
                     Utility.ForceMessage("|<color=orange><b>POV ON</b></color>|");
-                    messageDisplayed = true;
+                    camBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Player;
+                    displayPOVMessage = true;
                 }
 
-                GameObject cam = FindGameObject("Camera");
-                GameObject moveCam = FindGameObject("MoveCamera(Clone)");
+                if (moveCamera != null)
+                    HandleCameraInput();
 
-                if (cam != null && moveCam == null)
-                {
-                    HandleCameraInput(cam.GetComponent<CamBob>());
-                }
-                else if (moveCam != null)
-                {
-                    HandleCameraInput(moveCam.GetComponent<CamBob>());
-                }
-                else
-                {
-                    return;
-                }
-
-                lastSpectatedPlayer = targetPlayerObject;
+                lastSpectatedPlayer = spectatedPlayerObject;
                 DisablePlayerModel(lastSpectatedPlayer);
             }
 
-            void HandleCameraInput(CamBob camBob)
+            void FindAndAssignCamera()
             {
-                currentCamBob = camBob;
-                if (IsRightMouseButtonClicked())
-                {
-                    camBob.Method_Private_Void_Int32_0(1); 
-                    switchPlayerMessageDisplayed = true;
-                }
-                else if (IsLeftMouseButtonClicked())
-                {
-                    camBob.Method_Private_Void_Int32_0(-1); 
-                    switchPlayerMessageDisplayed = true;
-                }
+                moveCamera = GameObject.Find("MoveCamera(Clone)");
+                if (moveCamera != null)
+                    camBob = moveCamera.GetComponent<CamBob>();
+            }
 
-                targetPlayerObject = camBob.field_Private_Transform_1.gameObject;
-                camBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Player;
-                targetPlayerPos = targetPlayerObject.transform.position;
-                targetPlayerRot = targetPlayerObject.GetComponent<PlayerManager>().GetRotation();
-                targetPlayerForward = targetPlayerObject.transform.forward;
-
-                // Lisser le mouvement de la caméra
-                SmoothCameraMovement(camBob.transform);
-
-                if (lastSpectatedPlayer != null)
+            void HandleCameraInput()
+            {
+                if (IsRightMouseButtonClicked() || IsLeftMouseButtonClicked())
                 {
-                    RestorePlayerModelSize(lastSpectatedPlayer);
+                    int direction = IsRightMouseButtonClicked() ? 1 : -1;
+                    if (camBob != null)
+                    {
+                        camBob.Method_Private_Void_Int32_0(direction);
+                        camBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Player;
+                        displaySwitchedPlayerMessage = true;
+                    }
                 }
 
-                if (switchPlayerMessageDisplayed)
-                {
-                    DisplaySwitchPlayerMessage(targetPlayerObject.GetComponent<PlayerManager>());
-                    switchPlayerMessageDisplayed = false;
-                }
+                if (spectatedPlayerNeedUpdate)
+                    spectatedPlayerObject = camBob.field_Private_Transform_1.gameObject;
 
-                lastSpectatedPlayer = targetPlayerObject;
+                if (spectatedPlayerObject != null)
+                {
+                    spectatedPlayerPos = spectatedPlayerObject.transform.position;
+                    spectatedPlayerRot = spectatedPlayerObject.GetComponent<PlayerManager>().GetRotation();
+
+                    SmoothCameraMovement(camBob.transform);
+
+                    if (lastSpectatedPlayer != null)
+                    {
+                        RestorePlayerModelSize(lastSpectatedPlayer);
+                    }
+
+                    if (displaySwitchedPlayerMessage)
+                    {
+                        DisplaySwitchPlayerMessage(spectatedPlayerObject.GetComponent<PlayerManager>());
+                        displaySwitchedPlayerMessage = false;
+                    }
+
+                    lastSpectatedPlayer = spectatedPlayerObject;
+                }
             }
 
             void SmoothCameraMovement(Transform camTransform)
             {
-                camTransform.position = Vector3.Lerp(camTransform.position, targetPlayerPos + new Vector3(0, 1.5f, 0), Variables.smoothSpeedPosition * Time.deltaTime);
-                camTransform.rotation = Quaternion.Slerp(camTransform.rotation, targetPlayerRot, Variables.smoothSpeedRotation * Time.deltaTime);
+                camTransform.position = Vector3.Lerp(camTransform.position, spectatedPlayerPos + new Vector3(0, 1.5f, 0), Variables.smoothSpeedPosition * Time.deltaTime);
+                camTransform.rotation = Quaternion.Slerp(camTransform.rotation, spectatedPlayerRot, Variables.smoothSpeedRotation * Time.deltaTime);
             }
 
             void DisplaySwitchPlayerMessage(PlayerManager playerManager)
@@ -196,43 +202,37 @@ namespace SpectatePOV
 
             void DisablePlayerModel(GameObject player)
             {
-                Transform playerModelTransform = player.transform.Find("PlayerModel");
-                if (playerModelTransform != null)
+                if (player != null)
                 {
-                    playerModelTransform.localScale = Vector3.one * 0.0001f;
+                    Transform playerModelTransform = player.transform.Find("PlayerModel");
+                    if (playerModelTransform != null)
+                    {
+                        playerModelTransform.localScale = Vector3.one * 0.0001f;
+                    }
                 }
             }
 
             void RestorePlayerModelSize(GameObject player)
             {
-                Transform playerModelTransform = player.transform.Find("PlayerModel");
-                if (playerModelTransform != null)
+                if (player != null)
                 {
-                    playerModelTransform.localScale = Vector3.one * 0.3411f; 
+                    Transform playerModelTransform = player.transform.Find("PlayerModel");
+                    if (playerModelTransform != null)
+                    {
+                        playerModelTransform.localScale = Vector3.one * 0.3411f;
+                    }
                 }
-            }
-
-            GameObject FindGameObject(string name)
-            {
-                return GameObject.Find(name);
             }
 
             bool IsRightMouseButtonClicked()
             {
-                short state = GetAsyncKeyState(VK_RBUTTON);
-                return (state & 0x8000) != 0 && (state & 0x0001) != 0;
+                return Input.GetMouseButtonDown(1);
             }
 
             bool IsLeftMouseButtonClicked()
             {
-                short state = GetAsyncKeyState(VK_LBUTTON);
-                return (state & 0x8000) != 0 && (state & 0x0001) != 0;
+                return Input.GetMouseButtonDown(0);
             }
-
-            [DllImport("user32.dll")]
-            private static extern short GetAsyncKeyState(int vKey);
-            const int VK_RBUTTON = 0x02;
-            const int VK_LBUTTON = 0x01;
         }
 
         [HarmonyPatch(typeof(SteamManager), nameof(SteamManager.Update))]

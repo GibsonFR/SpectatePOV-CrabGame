@@ -1,10 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Globalization;
-using System.IO.Compression;
-using System.Net.Http;
-using System.Threading.Tasks;
-
-namespace SpectatePOV
+﻿namespace SpectatePOV
 {
     //Ici on stock les fonctions, dans des class pour la lisibilité du code dans Plugin.cs 
 
@@ -20,7 +14,8 @@ namespace SpectatePOV
         //Cette fonction envoie un message dans le chat de la part du client en mode Force (seul le client peut voir le message)
         public static void ForceMessage(string message)
         {
-            Variables.chatBoxInstance.ForceMessage(message);
+            if (Variables.displayMessageInChat)
+                Variables.chatBoxInstance.ForceMessage(message);
         }
 
         //Cette fonction envoie un message dans le chat de la part du server, marche uniquement en tant que Host de la partie
@@ -186,16 +181,18 @@ namespace SpectatePOV
                 Directory.Delete(path, true);
             }
         }
-        //Créer un fichier de configuration lisible par ReadConfigFile()
+        // Créer un fichier de configuration lisible par ReadConfigFile()
         public static void SetConfigFile(string configFilePath)
         {
             // Définition des valeurs par défaut
             Dictionary<string, string> defaultConfig = new Dictionary<string, string>
             {
-                {"version", "v0.1.0"},
+                {"version", "v0.1.2"},
                 {"povKey", "f1"},
                 {"smoothSpeedPosition", "20"},
-                {"smoothSpeedRotation", "10"}
+                {"smoothSpeedRotation", "10"},
+                {"updateFrequency", "1,0"},
+                {"displayMessageInChat", "true"}
             };
 
             Dictionary<string, string> currentConfig = new Dictionary<string, string>();
@@ -210,7 +207,9 @@ namespace SpectatePOV
                     string[] keyValue = ligne.Split('=');
                     if (keyValue.Length == 2)
                     {
-                        currentConfig[keyValue[0]] = keyValue[1];
+                        string key = keyValue[0].Trim();
+                        string value = keyValue[1].Trim();
+                        currentConfig[key] = value;
                     }
                 }
             }
@@ -233,7 +232,8 @@ namespace SpectatePOV
                 }
             }
         }
-        //Lit un fichier de config créer par SetConfigFile
+
+        // Lit un fichier de config créer par SetConfigFile
         public static void ReadConfigFile(string configFilePath)
         {
             string[] lines = System.IO.File.ReadAllLines(configFilePath);
@@ -241,16 +241,21 @@ namespace SpectatePOV
             CultureInfo cultureInfo = new CultureInfo("fr-FR");
             bool resultBool;
             int resultInt;
+            float resultFloat;
             bool parseSuccess;
 
             foreach (string line in lines)
             {
-                string[] parts = line.Split('=');
-                if (parts.Length == 2)
+                // Ignore les commentaires sur une ligne
+                if (!line.Trim().StartsWith("//"))
                 {
-                    string key = parts[0].Trim();
-                    string value = parts[1].Trim();
-                    config[key] = value;
+                    string[] parts = line.Split('=');
+                    if (parts.Length == 2)
+                    {
+                        string key = parts[0].Trim();
+                        string value = parts[1].Trim();
+                        config[key] = value;
+                    }
                 }
             }
             Variables.povKey = config["povKey"];
@@ -260,39 +265,23 @@ namespace SpectatePOV
 
             parseSuccess = int.TryParse(config["smoothSpeedRotation"], out resultInt);
             Variables.smoothSpeedRotation = parseSuccess ? resultInt : 10;
-            //-----------------------------//
-            //Exemple d'utilisation du ReadConfigFile, permet de lire le fichier config et d'associer cette valeur a une variable globale
-            /*
-            Variables.menuKey = config["menuKey"];
 
-            parseSuccess = int.TryParse(config["messageTimer"], out resultInt);
-            Variables.messageTimer = parseSuccess ? resultInt : 30;
+            parseSuccess = float.TryParse(config["updateFrequency"], out resultFloat);
+            Variables.updateFrequency = parseSuccess ? resultInt : 1;
 
-            parseSuccess = int.TryParse(config["playerToAutoStart"], out resultInt);
-            Variables.playerToAutoStart = parseSuccess ? resultInt : 2;
+            if (Variables.updateFrequency > 1)
+            {
+                Variables.updateFrequency = 1;
+            }
 
-            parseSuccess = int.TryParse(config["afkCheckDuration"], out resultInt);
-            Variables.afkCheckDuration = parseSuccess ? resultInt : 5;
-
-            parseSuccess = bool.TryParse(config["afkCheck"], out resultBool);
-            Variables.afkCheck = parseSuccess ? resultBool : false;
-
-            parseSuccess = bool.TryParse(config["chatConsole"], out resultBool);
-            Variables.chatConsole = parseSuccess ? resultBool : false;
-
-            parseSuccess = bool.TryParse(config["fireworks"], out resultBool);
-            Variables.fireworks = parseSuccess ? resultBool : false;
-
-            parseSuccess = bool.TryParse(config["snowballs"], out resultBool);
-            Variables.snowballs = parseSuccess ? resultBool : false;
-            */
-            //-----------------------------//
+            parseSuccess = bool.TryParse(config["displayMessageInChat"], out resultBool);
+            Variables.displayMessageInChat = parseSuccess ? resultBool : false;
         }
     }
 
-    //Cette class regroupe un ensemble de fonction relative aux données de la partie
-    public class GameData
-    {
+     //Cette class regroupe un ensemble de fonction relative aux données de la partie
+     public class GameData
+     {
         //Permet de trouver un joueur sur le serveur a partir de son nom ou de son #numéro
         public static string commandPlayerFinder(string identifier)
         {
