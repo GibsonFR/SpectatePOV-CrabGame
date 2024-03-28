@@ -6,8 +6,6 @@ global using UnityEngine;
 global using System;
 global using System.IO;
 global using UnhollowerRuntimeLib;
-global using System.Linq;
-global using System.Runtime.InteropServices;
 global using System.Collections.Generic;
 global using System.Globalization;
 global using System.IO.Compression;
@@ -16,7 +14,7 @@ global using System.Threading.Tasks;
 
 namespace SpectatePOV
 {
-    [BepInPlugin("PlaceHereGUID", "SpectatePOV", "1.2.0")]
+    [BepInPlugin("51AF094E-3DCE-4292-AE09-FFC2261C91AF", "SpectatePOV", "1.2.1")]
     public class Plugin : BasePlugin
     {
         public override void Load()
@@ -161,11 +159,15 @@ namespace SpectatePOV
                         camBob.Method_Private_Void_Int32_0(direction);
                         camBob.field_Private_EnumNPublicSealedvaPlSpPlFr5vUnique_0 = CamBob.EnumNPublicSealedvaPlSpPlFr5vUnique.Player;
                         displaySwitchedPlayerMessage = true;
+                        spectatedPlayerNeedUpdate = true;
                     }
                 }
 
                 if (spectatedPlayerNeedUpdate)
+                {
                     spectatedPlayerObject = camBob.field_Private_Transform_1.gameObject;
+                    spectatedPlayerNeedUpdate = false;
+                }
 
                 if (spectatedPlayerObject != null)
                 {
